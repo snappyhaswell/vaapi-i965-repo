@@ -1,0 +1,181 @@
+name: Build and publish Intel VA-API Flatpak repository
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "org.freedesktop.Platform.VAAPI.Intel.yml.in"
+      - ".github/workflows/build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build both runtime branches
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08
+      options: --privileged
+
+    env:
+      # Commit to build from.
+      BUILD_COMMIT: d159a4532a36bae4db2cebc5c74b24e018520218
+      SOURCE_REPOSITORY: https://github.com/irql-notlessorequal/intel-vaapi-driver.git
+      TEMPLATE: org.freedesktop.Platform.VAAPI.Intel.yml.in
+
+    steps:
+      - name: Check out build files
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # checkout v5
+
+      - name: Validate manifest inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f "$TEMPLATE" || {
+            echo "::error::Missing manifest template: $TEMPLATE"
+            exit 1
+          }
+
+          [[ "$BUILD_COMMIT" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::BUILD_COMMIT must be a full 40-character lowercase Git commit hash"
+            exit 1
+          }
+
+          grep -q '@BRANCH@' "$TEMPLATE" || {
+            echo "::error::Manifest template has no @BRANCH@ placeholder"
+            exit 1
+          }
+
+          grep -q '@COMMIT@' "$TEMPLATE" || {
+            echo "::error::Manifest template has no @COMMIT@ placeholder"
+            exit 1
+          }
+
+          grep -Fq "url: ${SOURCE_REPOSITORY}" "$TEMPLATE" || {
+            echo "::error::Source repository does not match the manifest Git source"
+            exit 1
+          }
+
+      - name: Add Flathub build dependency remote
+        shell: bash
+        run: |
+          flatpak remote-add --system --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo
+
+      - name: Build both branches into one repository
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for RUNTIME_BRANCH in 25.08 26.08; do
+            echo "::group::Build runtime ${RUNTIME_BRANCH}"
+
+            MANIFEST="manifest-${RUNTIME_BRANCH}.yml"
+            BUILD_DIR="build-dir-${RUNTIME_BRANCH}"
+
+            sed \
+              -e "s/@BRANCH@/${RUNTIME_BRANCH}/g" \
+              -e "s/@COMMIT@/${BUILD_COMMIT}/g" \
+              "$TEMPLATE" > "$MANIFEST"
+
+            flatpak-builder \
+              --download-only \
+              --disable-rofiles-fuse \
+              "$BUILD_DIR" \
+              "$MANIFEST"
+
+            flatpak-builder \
+              --force-clean \
+              --keep-build-dirs \
+              --disable-download \
+              --disable-rofiles-fuse \
+              --install-deps-from=flathub \
+              --repo=repo \
+              "$BUILD_DIR" \
+              "$MANIFEST"
+
+            echo "::endgroup::"
+          done
+
+      - name: Update and verify repository
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          flatpak build-update-repo repo
+          refs="$(ostree --repo=repo refs)"
+
+          for RUNTIME_BRANCH in 25.08 26.08; do
+            REF="runtime/org.freedesktop.Platform.VAAPI.Intel/x86_64/${RUNTIME_BRANCH}"
+
+            if ! grep -Fqx -- "$REF" <<< "$refs"; then
+              echo "::error::Missing expected ref: $REF"
+              printf '%s\n' "$refs"
+              exit 1
+            fi
+          done
+
+      - name: Prepare Pages site
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p site
+          cp -a repo/. site/
+          touch site/.nojekyll
+
+      - name: Upload repository artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # upload-artifact v6
+        with:
+          name: flatpak-repository
+          path: site/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Show Meson logs if the build fails
+        if: failure()
+        shell: bash
+        run: |
+          find .flatpak-builder build-dir-25.08 build-dir-26.08 \
+            -type f -name meson-log.txt -print \
+            -exec sh -c 'echo "===== $1"; tail -n 80 "$1"' _ {} \; \
+            2>/dev/null || true
+
+  publish:
+    name: Publish Flatpak repository to GitHub Pages
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Download built repository
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # download-artifact v6
+        with:
+          name: flatpak-repository
+          path: site
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # upload-pages-artifact v4
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # deploy-pages v4
