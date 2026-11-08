@@ -1,0 +1,107 @@
+id: org.freedesktop.Platform.VAAPI.Intel
+branch: '@BRANCH@'
+runtime: org.freedesktop.Platform
+runtime-version: '@BRANCH@'
+sdk: org.freedesktop.Sdk
+build-extension: true
+separate-locales: false
+appstream-compose: false
+
+modules:
+  - name: intel-vaapi-driver-irql
+    buildsystem: simple
+    license-files:
+      - driver-src/LICENSE
+    build-commands:
+      - |
+        set -eu
+
+        meson setup _pciaccess-build libpciaccess-src \
+          --prefix=/app --libdir=lib --buildtype=release
+        meson compile -C _pciaccess-build
+        meson install -C _pciaccess-build
+
+        BASE_LDFLAGS="${LDFLAGS:-}"
+        export LDFLAGS="${BASE_LDFLAGS} -Wl,-rpath,\$ORIGIN"
+
+        meson setup _libdrm-build libdrm-src \
+          --prefix=/app --libdir=lib --buildtype=release \
+          -Dintel=enabled \
+          -Dradeon=disabled \
+          -Damdgpu=disabled \
+          -Dnouveau=disabled \
+          -Dtests=false \
+          -Dinstall-test-programs=false \
+          -Dvalgrind=disabled \
+          -Dudev=false \
+          -Dman-pages=disabled
+        meson compile -C _libdrm-build
+        meson install -C _libdrm-build
+
+        test -f /app/lib/pkgconfig/libdrm_intel.pc
+        export PKG_CONFIG_PATH="/app/lib/pkgconfig:/app/share/pkgconfig:${PKG_CONFIG_PATH:-}"
+        pkg-config --print-errors --modversion libdrm_intel
+
+        export LDFLAGS="${BASE_LDFLAGS} -Wl,-rpath,\$ORIGIN/lib"
+        meson setup _driver-build driver-src \
+          --prefix=/usr \
+          --buildtype=release \
+          -Ddriverdir=/usr/lib/x86_64-linux-gnu/dri/intel-vaapi-driver \
+          -Dwith_x11=yes \
+          -Dwith_wayland_drm=no \
+          -Denable_tests=false
+        meson compile -C _driver-build
+
+        DESTDIR="$PWD/_driver-stage" meson install -C _driver-build --no-rebuild
+        DRIVER="$(find _driver-stage -name i965_drv_video.so -print -quit)"
+        test -n "$DRIVER"
+        install -Dm755 "$DRIVER" "${FLATPAK_DEST}/i965_drv_video.so"
+        printf 'intel-vaapi-driver IRQL fork\ncommit @COMMIT@\nbranch @BRANCH@\n' \
+          > "${FLATPAK_DEST}/BUILD-INFO"
+
+        LIBDIR="${FLATPAK_DEST}/lib"
+        install -d "$LIBDIR"
+        cp -a /app/lib/libdrm_intel.so.1* "$LIBDIR/"
+        cp -a /app/lib/libdrm.so.2* "$LIBDIR/"
+        cp -a /app/lib/libpciaccess.so.0* "$LIBDIR/"
+
+        command -v readelf >/dev/null 2>&1 || {
+          echo "readelf is required to verify driver library paths" >&2
+          exit 1
+        }
+
+        for f in "${FLATPAK_DEST}/i965_drv_video.so" "${LIBDIR}/libdrm_intel.so.1"; do
+          dynamic_tags="$(readelf -d "$f")"
+          if ! printf '%s\n' "$dynamic_tags" | grep -Eq '(RPATH|RUNPATH).*\$ORIGIN'; then
+            echo "Expected an RPATH/RUNPATH containing \$ORIGIN in $f" >&2
+            exit 1
+          fi
+        done
+
+        rm -f /app/lib/libdrm.so* \
+              /app/lib/libdrm_intel.so* \
+              /app/lib/libpciaccess.so*
+        rm -f /app/lib/pkgconfig/libdrm.pc \
+              /app/lib/pkgconfig/libdrm_intel.pc \
+              /app/lib/pkgconfig/pciaccess.pc
+        rm -f /app/include/pciaccess.h \
+              /app/include/libsync.h \
+              /app/include/xf86drm.h \
+              /app/include/xf86drmMode.h
+        rm -rf /app/include/libdrm
+
+    sources:
+      - type: archive
+        url: https://xorg.freedesktop.org/archive/individual/lib/libpciaccess-0.19.tar.xz
+        sha256: 3c55aa86c82e54a4e3109786f0463530d53b36b6d1cfd14616454f985dd2aa43
+        dest: libpciaccess-src
+
+      - type: archive
+        url: https://dri.freedesktop.org/libdrm/libdrm-2.4.134.tar.xz
+        sha256: ac5e74d157830eb8bee44c6a6bf3ad49774ef0dd2a72bdad74a8f20308b52a95
+        dest: libdrm-src
+
+      - type: git
+        url: https://github.com/irql-notlessorequal/intel-vaapi-driver.git
+        commit: '@COMMIT@'
+        dest: driver-src
