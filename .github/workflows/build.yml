@@ -24,7 +24,7 @@ jobs:
 
     env:
       # Commit to build from.
-      BUILD_COMMIT: d159a4532a36bae4db2cebc5c74b24e018520218
+      BUILD_COMMIT: a3e7353e054eee372d6176466f3ee142addc3693
       SOURCE_REPOSITORY: https://github.com/irql-notlessorequal/intel-vaapi-driver.git
       TEMPLATE: org.freedesktop.Platform.VAAPI.Intel.yml.in
 
