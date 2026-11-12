@@ -62,8 +62,6 @@ modules:
         LIBDIR="${FLATPAK_DEST}/lib"
         install -d "$LIBDIR"
         cp -a /app/lib/libdrm_intel.so.1* "$LIBDIR/"
-        cp -a /app/lib/libdrm.so.2* "$LIBDIR/"
-        cp -a /app/lib/libpciaccess.so.0* "$LIBDIR/"
 
         command -v readelf >/dev/null 2>&1 || {
           echo "readelf is required to verify driver library paths" >&2
