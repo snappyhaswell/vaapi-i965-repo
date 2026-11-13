@@ -30,6 +30,14 @@ modules:
           -Dradeon=disabled \
           -Damdgpu=disabled \
           -Dnouveau=disabled \
+          -Dvmwgfx=disabled \
+          -Domap=disabled \
+          -Dexynos=disabled \
+          -Dfreedreno=disabled \
+          -Dtegra=disabled \
+          -Dvc4=disabled \
+          -Detnaviv=disabled \
+          -Dcairo-tests=disabled \
           -Dtests=false \
           -Dinstall-test-programs=false \
           -Dvalgrind=disabled \
