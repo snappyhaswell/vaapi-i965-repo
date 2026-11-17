@@ -8,9 +8,6 @@ separate-locales: false
 appstream-compose: false
 
 modules:
-  # Extension builds only persist $FLATPAK_DEST between modules (not /app), so
-  # dependencies are installed there. config-opts are not shell-expanded, hence
-  # the literal prefix; the driver module verifies it matches $FLATPAK_DEST.
   - name: libpciaccess
     buildsystem: meson
     config-opts:
@@ -110,15 +107,17 @@ modules:
           fi
         done
 
-        # The runtime provides libdrm and libpciaccess; keep only libdrm_intel.so.1*.
-        rm -f "${LIBDIR}"/libdrm.so* \
-              "${LIBDIR}"/libdrm_intel.so \
-              "${LIBDIR}"/libpciaccess.so*
-        rm -rf "${LIBDIR}/pkgconfig" \
-               "${FLATPAK_DEST}/include" \
-               "${FLATPAK_DEST}/share/pkgconfig"
+        echo "Extension contents before pruning:"
+        find "${FLATPAK_DEST}" \( -type f -o -type l \) | sort
 
-        echo "Extension contents:"
+        find "${FLATPAK_DEST}" -mindepth 1 \
+          ! -path "${FLATPAK_DEST}/BUILD-INFO" \
+          ! -path "${FLATPAK_DEST}/i965_drv_video.so" \
+          ! -path "${LIBDIR}" \
+          ! -path "${LIBDIR}/libdrm_intel.so.1*" \
+          -delete
+
+        echo "Extension contents after pruning:"
         find "${FLATPAK_DEST}" \( -type f -o -type l \) | sort
 
     sources:
