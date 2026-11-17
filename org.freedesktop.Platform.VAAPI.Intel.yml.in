@@ -17,13 +17,12 @@ modules:
       - type: archive
         url: https://xorg.freedesktop.org/archive/individual/lib/libpciaccess-0.19.tar.xz
         sha256: 3c55aa86c82e54a4e3109786f0463530d53b36b6d1cfd14616454f985dd2aa43
-        dest: libpciaccess-src
 
   - name: libdrm
     buildsystem: meson
     builddir: true
     build-options:
-      append-ldflags: -Wl,-rpath,$ORIGIN
+      ldflags: -Wl,-rpath,$ORIGIN
     config-opts:
       - --buildtype=release
       - -Dintel=enabled
@@ -47,7 +46,6 @@ modules:
       - type: archive
         url: https://dri.freedesktop.org/libdrm/libdrm-2.4.134.tar.xz
         sha256: ac5e74d157830eb8bee44c6a6bf3ad49774ef0dd2a72bdad74a8f20308b52a95
-        dest: libdrm-src
 
   - name: intel-vaapi-driver-irql
     buildsystem: simple
