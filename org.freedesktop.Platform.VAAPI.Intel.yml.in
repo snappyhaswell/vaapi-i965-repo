@@ -51,6 +51,9 @@ modules:
 
   - name: intel-vaapi-driver-irql
     buildsystem: simple
+    build-options:
+      append-pkg-config-path: /usr/lib/x86_64-linux-gnu/dri/intel-vaapi-driver/lib/pkgconfig
+      ldflags: '-Wl,-rpath,$ORIGIN/lib'
     license-files:
       - driver-src/LICENSE
     build-commands:
@@ -63,15 +66,7 @@ modules:
           echo "FLATPAK_DEST is '${FLATPAK_DEST}'; update --prefix in libpciaccess and libdrm" >&2
           exit 1
         }
-        test -f "${LIBDIR}/pkgconfig/libdrm_intel.pc" || {
-          echo "Missing ${LIBDIR}/pkgconfig/libdrm_intel.pc (libdrm did not install here)" >&2
-          exit 1
-        }
-        export PKG_CONFIG_PATH="${LIBDIR}/pkgconfig:${FLATPAK_DEST}/share/pkgconfig:${PKG_CONFIG_PATH:-}"
-        echo "Building against libdrm_intel $(pkg-config --print-errors --modversion libdrm_intel)"
 
-        BASE_LDFLAGS="${LDFLAGS:-}"
-        export LDFLAGS="${BASE_LDFLAGS} -Wl,-rpath,\$ORIGIN/lib"
         meson setup _driver-build driver-src \
           --prefix=/usr \
           --buildtype=release \
@@ -91,20 +86,11 @@ modules:
         printf 'intel-vaapi-driver IRQL fork\ncommit @COMMIT@\nbranch @BRANCH@\n' \
           > "${FLATPAK_DEST}/BUILD-INFO"
 
-        ls "${LIBDIR}"/libdrm_intel.so.1* >/dev/null || {
-          echo "libdrm_intel.so.1 missing from ${LIBDIR}" >&2
-          exit 1
-        }
-
-        command -v readelf >/dev/null 2>&1 || {
-          echo "readelf is required to verify driver library paths" >&2
-          exit 1
-        }
         for f in "${FLATPAK_DEST}/i965_drv_video.so" "${LIBDIR}/libdrm_intel.so.1"; do
-          if ! readelf -d "$f" | grep -Eq '(RPATH|RUNPATH).*\$ORIGIN'; then
+          readelf -d "$f" | grep -Eq '(RPATH|RUNPATH).*\$ORIGIN' || {
             echo "Expected an RPATH/RUNPATH containing \$ORIGIN in $f" >&2
             exit 1
-          fi
+          }
         done
 
         echo "Extension contents before pruning:"
