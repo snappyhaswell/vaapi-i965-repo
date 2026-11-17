@@ -23,6 +23,7 @@ jobs:
       options: --privileged
 
     env:
+      RUNTIME_BRANCHES: "25.08 26.08"
       # Commit to build from.
       BUILD_COMMIT: a3e7353e054eee372d6176466f3ee142addc3693
       SOURCE_REPOSITORY: https://github.com/irql-notlessorequal/intel-vaapi-driver.git
@@ -73,7 +74,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          for RUNTIME_BRANCH in 25.08 26.08; do
+          for RUNTIME_BRANCH in $RUNTIME_BRANCHES; do
             echo "::group::Build runtime ${RUNTIME_BRANCH}"
 
             MANIFEST="manifest-${RUNTIME_BRANCH}.yml"
@@ -83,6 +84,11 @@ jobs:
               -e "s/@BRANCH@/${RUNTIME_BRANCH}/g" \
               -e "s/@COMMIT@/${BUILD_COMMIT}/g" \
               "$TEMPLATE" > "$MANIFEST"
+
+            if grep -n '@[A-Z_]*@' "$MANIFEST"; then
+              echo "::error::Unreplaced placeholders in $MANIFEST"
+              exit 1
+            fi
 
             flatpak-builder \
               --download-only \
@@ -111,7 +117,7 @@ jobs:
           flatpak build-update-repo repo
           refs="$(ostree --repo=repo refs)"
 
-          for RUNTIME_BRANCH in 25.08 26.08; do
+          for RUNTIME_BRANCH in $RUNTIME_BRANCHES; do
             REF="runtime/org.freedesktop.Platform.VAAPI.Intel/x86_64/${RUNTIME_BRANCH}"
 
             if ! grep -Fqx -- "$REF" <<< "$refs"; then
@@ -142,7 +148,7 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          find .flatpak-builder build-dir-25.08 build-dir-26.08 \
+          find .flatpak-builder build-dir-* \
             -type f -name meson-log.txt -print \
             -exec sh -c 'echo "===== $1"; tail -n 80 "$1"' _ {} \; \
             2>/dev/null || true
